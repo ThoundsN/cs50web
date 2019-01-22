@@ -5,6 +5,40 @@
 {% endblock %}
 
 {% block body %}
-<<h1>Welcome!!!  {{session}}</h1>
+<h1>Welcome!!!  {{username}}</h1>
+
+
+<blockquote class="blockquote p-5 mt-5">
+    <p>“A reader lives a thousand lives before he dies, said Jojen. <br>The man who never reads lives only one.”</p>
+    <footer class="blockquote-footer">George R.R. Martin, A Dance with Dragons </footer>
+  </blockquote>
+
+  <form action = "{{url_for('logout')}}" method = "post">
+  <button  type="submit" class="btn btn-secondary active">logout</button>
+  </form>
+
+
+
+<nav class='navbar navbar-expand bg-dark navbar-dark justify-content-center'>
+    <form class="form-inline " action="{{url_for('search')}}" method="POST">
+        <input class="form-control mr-2" type="text" placeholder="Search" name="text">
+        <button class="btn btn-success" type="submit">Search</button>
+    </form>
+</nav>
+
+<main>
+  <div class='container bg-light h-25 p-3'>
+     <h3 class='text-center p-3'>{{ message }}</h3>
+
+     <div class="list-group">
+     {% for x in books %}
+         <a href='/isbn/{{x.isbn}}' class="list-group-item list-group-item-action">
+             <h5 class='text-primary'>{{x.title}}</h5>
+              by {{x.author}} in {{x.year}}
+              <h6 class='float-right'>isbn: {{x.isbn}}</h6></a>
+         {% endfor %}
+     </div>
+ </div>
+</main>
 
 {% endblock %}

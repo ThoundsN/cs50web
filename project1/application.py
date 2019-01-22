@@ -1,16 +1,16 @@
+import json
 import os
 
 from flask import Flask, session, request, render_template
 from flask_session import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
-import validators
+
+import requests
+
 
 
 app = Flask(__name__)
-import requests
-res = requests.get("https://www.goodreads.com/book/review_counts.json", params={"key": "kZfYFDBnljvMpQSr0H3Vg", "isbns": "9781632168146"})
-# print(res.json())
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
@@ -40,26 +40,20 @@ def login():
     username = request.form.get("username")
     password = request.form.get("password")
 
-    userRecord = db.execute("SELECT * FROM users WHERE username= :username", {"username":username})
+    userRecord = db.execute("SELECT * FROM users WHERE username= :username AND password= :password", {"username":username,"password":password }).fetchone()
     if userRecord is None:
-        return render_template("mainpage.html", message = "No such account")
-    row = {}
-    print(userRecord)
-    for r in userRecord:
-        print(type(r.__dict__))
-        row = row + r.__dict__
-    if row["password"] != password:
-        return render_template("mainpage.html", message = "Password incorrect")
+        return render_template("mainpage.html", message = "Incorrect password or username")
 
-    session["uid"] = row["id"]
-    session["username"] = row["username"]
-    return render_template("dashboard.html", session = session)
+    session["uid"] = userRecord['id']
+    session["username"] = userRecord['username']
+    return render_template("dashboard.html", username = session.get("username"))
+
 
 @app.route("/logout")
 def logout():
-    if "uid" in session:
-        del session['uid']
+    session.clear()
     return render_template("mainpage.html")
+
 
 @app.route("/newuser", methods = ["POST"])
 def newuser():
@@ -81,15 +75,71 @@ def newuser():
 
 @app.route("/dashboard", methods = ["POST"])
 def dashboard():
-
-    return render_template("dashboard.html")
+    username = session.get("username")
+    return render_template("dashboard.html",username=username)
 
 @app.route("/register", methods = ["POST"])
 def register():
     return render_template("register.html")
 
+@app.route("/search", methods=["POST"])
+def search():
+    text = request.form.get("text")
+    username = session.get("username")
+    data =db.execute("SELECT * FROM books WHERE author iLIKE '%"+text+"%' OR title iLIKE '%"+text+"%' OR isbn iLIKE '%"+text+"%'").fetchall()
+    books = []
+    for x in data:
+        books.append(x)
+    if len(books) == 0:
+        message = "Nothing found, please make sure you enter the correct query"
+    else:
+        message = "These are the books you might  be interested in!"
+    return render_template("dashboard.html", message = message, books = books, username = username)
 
 
-def rowtodict(resultproxy):
-    d = {}
-    for rowproxy in resultproxy:
+@app.route("/isbn/<string:isbn>", methods=["GET","POST"])
+def bookpage(isbn):
+    if session is None:
+        message = "Please login in the first place"
+        return render_template("mainpage.html", message = message)
+    username = session.get("username")
+    hasreview  = db.execute("SELECT * FROM reviews WHERE isbn = :isbn AND username= :username",{"username":username,"isbn":isbn}).fetchone()
+    if request.method == "POST" and hasreview is not None:
+        warning = "Sorry, You have already reviewd this book"
+    elif request.method == "POST" and hasreview is None:
+        review = request.form.get("textarea")
+        rating = request.form.get("stars")
+        db.execute("INSERT INTO reviews (isbn, review, rating, username) VALUES (:a,:b,:c,:d)",{"a":isbn,"b":review,"c":rating,"d":username})
+        db.commit()
+
+    reviews = db.execute("SELECT * FROM reviews WHERE isbn = :isbn", {"isbn": isbn}).fetchall()
+    data=db.execute("SELECT * FROM books WHERE isbn = :isbn",{"isbn":isbn}).fetchone()
+    res = requests.get("https://www.goodreads.com/book/review_counts.json",
+                       params={"key": "XfLii2ANGvBM0dq48QHGA", "isbns":isbn})
+    average_rating  = res.json()['books'][0]['average_rating']
+    work_ratings_count = res.json()['books'][0]['work_ratings_count']
+
+    return render_template("bookdetail.html", average_rating =average_rating, work_ratings_count = work_ratings_count,
+                           data = data,  reviews = reviews, username = username )
+
+
+@app.route("/api/<string:isbn>")
+def api(isbn):
+    data=db.execute("SELECT * FROM books WHERE isbn = :isbn",{"isbn":isbn}).fetchone()
+    if data is None:
+        return render_template("error.html", message = "ISBN INCORRECT")
+    res = requests.get("https://www.goodreads.com/book/review_counts.json",
+                       params={"key": "XfLii2ANGvBM0dq48QHGA", "isbns": isbn})
+    average_rating = res.json()['books'][0]['average_rating']
+    work_ratings_count = res.json()['books'][0]['work_ratings_count']
+    x ={
+        "title":data.title,
+        "author": data.author,
+        "year": data.year,
+        "isbn": data.isbn,
+        "work_ratings_count " : work_ratings_count,
+        "average_rating ": average_rating
+
+    }
+    api = json.dumps(x)
+    return render_template("api.json", api = api)
